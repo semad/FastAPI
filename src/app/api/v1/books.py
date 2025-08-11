@@ -15,6 +15,30 @@ from ...schemas.user import UserRead
 
 router = APIRouter(tags=["books"])
 
+@router.get("/books", response_model=PaginatedListResponse[BookRead])
+@router.post("/books", response_model=PaginatedListResponse[BookRead])
+@cache(
+    key_prefix="public_books:page_{page}:items_per_page:{items_per_page}",
+    resource_id_name="page",
+    expiration=300,
+)
+async def read_all_books(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(async_get_db)],
+    page: int = 1,
+    items_per_page: int = 10,
+) -> dict:
+    books_data = await crud_books.get_multi(
+        db=db,
+        offset=compute_offset(page, items_per_page),
+        limit=items_per_page,
+        is_deleted=False,
+    )
+
+    response: dict[str, Any] = paginated_response(crud_data=books_data, page=page, items_per_page=items_per_page)
+    return response
+
+
 
 @router.post("/{username}/book", response_model=BookRead, status_code=201)
 async def write_book(
@@ -175,31 +199,6 @@ async def erase_db_book(
 
     await crud_books.db_delete(db=db, id=id, created_by_user_id=db_user.id)
     return {"message": "Book permanently deleted successfully"}
-
-
-# Public endpoints for browsing books
-@router.get("/books", response_model=PaginatedListResponse[BookRead])
-@router.post("/books", response_model=PaginatedListResponse[BookRead])
-@cache(
-    key_prefix="public_books:page_{page}:items_per_page:{items_per_page}",
-    resource_id_name="page",
-    expiration=300,
-)
-async def read_all_books(
-    request: Request,
-    db: Annotated[AsyncSession, Depends(async_get_db)],
-    page: int = 1,
-    items_per_page: int = 10,
-) -> dict:
-    books_data = await crud_books.get_multi(
-        db=db,
-        offset=compute_offset(page, items_per_page),
-        limit=items_per_page,
-        is_deleted=False,
-    )
-
-    response: dict[str, Any] = paginated_response(crud_data=books_data, page=page, items_per_page=items_per_page)
-    return response
 
 
 @router.get("/book/{id}", response_model=BookRead)
