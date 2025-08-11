@@ -1,4 +1,4 @@
-version: '3.8'
+#version: '3.8'
 
 services:
   web:
@@ -45,8 +45,8 @@ services:
     # -------- replace with comment to run migrations with docker --------
     expose:
       - "5432"
-    # ports:
-    #  - 5432:5432
+    ports:
+      - 5432:5432
 
   redis:
     image: redis:alpine
@@ -55,59 +55,69 @@ services:
     expose:
       - "6379"
 
+  redisinsight:
+    image: redis/redisinsight:latest
+    ports:
+      - "5540:5540"
+    depends_on:
+      - redis
+    env_file:
+      - ./src/.env 
+
+
   #-------- uncomment to run with pgadmin --------
-  # pgadmin:
-  #   container_name: pgadmin4
-  #   image: dpage/pgadmin4:latest
-  #   restart: always
-  #   ports:
-  #     - "5050:80"
-  #   volumes:
-  #     - pgadmin-data:/var/lib/pgadmin
-  #   env_file:
-  #     - ./src/.env
-  #   depends_on:
-  #     - db
+  pgadmin:
+    container_name: pgadmin4
+    image: dpage/pgadmin4:latest
+    restart: always
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    env_file:
+      - ./src/.env
+    depends_on:
+      - db
 
   #-------- uncomment to run with nginx --------
-  # nginx:
-  #   image: nginx:latest
-  #   ports:
-  #     - "80:80"
-  #   volumes:
-  #     - ./default.conf:/etc/nginx/conf.d/default.conf
-  #   depends_on:
-  #     - web
-
+#  nginx:
+#    image: nginx:latest
+#    ports:
+#      - "80:80"
+#    volumes:
+#      - ./default.conf:/etc/nginx/conf.d/default.conf
+#    depends_on:
+#      - web
+#
   #-------- uncomment to create first superuser --------
-  # create_superuser:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   env_file:
-  #     - ./src/.env
-  #   depends_on:
-  #     - db
-  #     - web
-  #   command: python -m src.scripts.create_first_superuser
-  #   volumes:
-  #     - ./src:/code/src
+  create_superuser:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ./src/.env
+    depends_on:
+      - db
+      - web
+    command: python -m src.scripts.create_first_superuser
+    volumes:
+      - ./src:/code/src
 
   #-------- uncomment to create first tier --------
-  # create_tier:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   env_file:
-  #     - ./src/.env
-  #   depends_on:
-  #     - db
-  #     - web
-  #   command: python -m src.scripts.create_first_tier
-  #   volumes:
-  #     - ./src:/code/src
+  create_tier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ./src/.env
+    depends_on:
+      - db
+      - web
+    command: python -m src.scripts.create_first_tier
+    volumes:
+      - ./src:/code/src
 
 volumes:
   postgres-data:
   redis-data:
-  #pgadmin-data:
+  pgadmin-data:

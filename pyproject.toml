@@ -101,6 +101,7 @@ convention = "numpy"
 filterwarnings = [
     "ignore::PendingDeprecationWarning:starlette.formparsers",
 ]
+asyncio_mode = "auto"
 
 [dependency-groups]
 dev = [

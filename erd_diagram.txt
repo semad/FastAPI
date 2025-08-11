@@ -1,0 +1,80 @@
+================================================================================
+ENTITY RELATIONSHIP DIAGRAM
+================================================================================
+
+Entity: User (Table: user)
+--------------------------------------------------
+  id: INTEGER [PK] [UNIQUE]
+  name: VARCHAR(30)
+  username: VARCHAR(20) [UNIQUE] [INDEX]
+  email: VARCHAR(50) [UNIQUE] [INDEX]
+  hashed_password: VARCHAR
+  profile_image_url: VARCHAR
+  uuid: CHAR(32) [PK] [UNIQUE]
+  created_at: DATETIME
+  updated_at: DATETIME [NULL]
+  deleted_at: DATETIME [NULL]
+  is_deleted: BOOLEAN [INDEX]
+  is_superuser: BOOLEAN
+  tier_id: INTEGER [FK] [NULL] [INDEX]
+
+Entity: Book (Table: book)
+--------------------------------------------------
+  id: INTEGER [PK] [UNIQUE]
+  title: VARCHAR(200)
+  author: VARCHAR(100)
+  description: TEXT [NULL]
+  isbn: VARCHAR(13) [NULL] [UNIQUE] [INDEX]
+  publication_year: INTEGER [NULL]
+  genre: VARCHAR(50) [NULL]
+  pages: INTEGER [NULL]
+  cover_image_url: VARCHAR [NULL]
+  folder_path: VARCHAR(500) [NULL] [INDEX]
+  file_size_bytes: INTEGER [NULL]
+  content_hash: VARCHAR(64) [NULL] [INDEX]
+  created_by_user_id: INTEGER [FK] [NULL] [INDEX]
+  uuid: CHAR(32) [PK] [UNIQUE]
+  created_at: DATETIME
+  updated_at: DATETIME [NULL]
+  deleted_at: DATETIME [NULL]
+  is_deleted: BOOLEAN [INDEX]
+
+Entity: Post (Table: post)
+--------------------------------------------------
+  id: INTEGER [PK] [UNIQUE]
+  created_by_user_id: INTEGER [FK] [INDEX]
+  title: VARCHAR(30)
+  text: VARCHAR(63206)
+  uuid: CHAR(32) [PK] [UNIQUE]
+  media_url: VARCHAR [NULL]
+  created_at: DATETIME
+  updated_at: DATETIME [NULL]
+  deleted_at: DATETIME [NULL]
+  is_deleted: BOOLEAN [INDEX]
+
+Entity: Tier (Table: tier)
+--------------------------------------------------
+  id: INTEGER [PK] [UNIQUE]
+  name: VARCHAR [UNIQUE]
+  created_at: DATETIME
+  updated_at: DATETIME [NULL]
+
+Entity: RateLimit (Table: rate_limit)
+--------------------------------------------------
+  id: INTEGER [PK] [UNIQUE]
+  tier_id: INTEGER [FK] [INDEX]
+  name: VARCHAR [UNIQUE]
+  path: VARCHAR
+  limit: INTEGER
+  period: INTEGER
+  created_at: DATETIME
+  updated_at: DATETIME [NULL]
+
+RELATIONSHIPS:
+--------------------
+User.tier_id -> Tier.id (Many-to-One (Optional))
+Book.created_by_user_id -> User.id (Many-to-One (Optional))
+Post.created_by_user_id -> User.id (Many-to-One)
+RateLimit.tier_id -> Tier.id (Many-to-One)
+
+================================================================================

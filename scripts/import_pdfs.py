@@ -25,6 +25,7 @@ import asyncio
 import aiohttp
 import json
 from urllib.parse import urljoin
+import time
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -187,13 +188,19 @@ class PDFImporter:
             params = {'items_per_page': 100}  # Get more books to search through
             
             async with self.session.get(url, params=params) as response:
+                print(f"response: {response.status}")
                 if response.status == 200:
                     data = await response.json()
                     books = data.get('data', [])
+                    print(f"books: {books}")
                     
                     # Check if any book has the same content hash
+                    print(f"content_hash: {content_hash}")
                     for book in books:
+                        print(f"\t{book.get('content_hash')} {book.get('title')}")
+
                         if book.get('content_hash') == content_hash:
+                            print(f"Book already exists with content hash: {content_hash}")
                             return True
                     
                     return False
@@ -232,7 +239,7 @@ class PDFImporter:
             headers = {
                 'Authorization': f'Bearer {self.access_token}'
             }
-            print(f"headers: {headers} and url: {url} and book_data: {book_data}")
+            #print(f"headers: {headers} and url: {url} and book_data: {book_data}")
             async with self.session.post(url, json=book_data, headers=headers) as response:
                 if response.status == 201:
                     book = await response.json()

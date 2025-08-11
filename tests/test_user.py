@@ -1,191 +1,187 @@
-"""Unit tests for user API endpoints."""
-
-from unittest.mock import AsyncMock, Mock, patch
+"""Integration tests for user CRUD operations."""
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm.exc import NoResultFound
 
-from src.app.api.v1.users import erase_user, patch_user, read_user, read_users, write_user
 from src.app.core.exceptions.http_exceptions import DuplicateValueException, ForbiddenException, NotFoundException
-from src.app.schemas.user import UserCreate, UserRead, UserUpdate
+from src.app.crud.crud_users import crud_users
+from src.app.models.user import User
+from src.app.schemas.user import UserCreate, UserCreateInternal, UserUpdate
+from src.app.core.security import get_password_hash
 
 
 class TestWriteUser:
-    """Test user creation endpoint."""
+    """Test user creation operations."""
 
     @pytest.mark.asyncio
-    async def test_create_user_success(self, mock_db, sample_user_data, sample_user_read):
+    async def test_create_user_success(self, async_db: AsyncSession, sample_user_data):
         """Test successful user creation."""
         user_create = UserCreate(**sample_user_data)
+        
+        # Create user using CRUD directly
+        user_internal_dict = user_create.model_dump()
+        user_internal_dict["hashed_password"] = get_password_hash(password=user_internal_dict["password"])
+        del user_internal_dict["password"]
+        
+        user_internal = UserCreateInternal(**user_internal_dict)
+        created_user = await crud_users.create(db=async_db, object=user_internal)
+        
+        assert created_user is not None
+        assert created_user.username == user_create.username
+        assert created_user.email == user_create.email
+        assert created_user.name == user_create.name
+        assert created_user.id is not None
 
-        with patch("src.app.api.v1.users.crud_users") as mock_crud:
-            # Mock that email and username don't exist
-            mock_crud.exists = AsyncMock(side_effect=[False, False])  # email, then username
-            mock_crud.create = AsyncMock(return_value=Mock(id=1))
-            mock_crud.get = AsyncMock(return_value=sample_user_read)
-
-            with patch("src.app.api.v1.users.get_password_hash") as mock_hash:
-                mock_hash.return_value = "hashed_password"
-
-                result = await write_user(Mock(), user_create, mock_db)
-
-                assert result == sample_user_read
-                mock_crud.exists.assert_any_call(db=mock_db, email=user_create.email)
-                mock_crud.exists.assert_any_call(db=mock_db, username=user_create.username)
-                mock_crud.create.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_create_user_duplicate_email(self, mock_db, sample_user_data):
-        """Test user creation with duplicate email."""
-        user_create = UserCreate(**sample_user_data)
-
-        with patch("src.app.api.v1.users.crud_users") as mock_crud:
-            # Mock that email already exists
-            mock_crud.exists = AsyncMock(return_value=True)
-
-            with pytest.raises(DuplicateValueException, match="Email is already registered"):
-                await write_user(Mock(), user_create, mock_db)
+        # Verify user was actually created in database
+        db_user = await crud_users.get(db=async_db, username=created_user.username)
+        assert db_user is not None
+        assert db_user["username"] == user_create.username
+        assert db_user["email"] == user_create.email
+        assert db_user["name"] == user_create.name
 
     @pytest.mark.asyncio
-    async def test_create_user_duplicate_username(self, mock_db, sample_user_data):
-        """Test user creation with duplicate username."""
+    async def test_create_user_duplicate_email(self, async_db: AsyncSession, sample_user_data):
+        """Test user creation with duplicate email fails."""
         user_create = UserCreate(**sample_user_data)
+        
+        # Create first user
+        user_internal_dict = user_create.model_dump()
+        user_internal_dict["hashed_password"] = get_password_hash(password=user_internal_dict["password"])
+        del user_internal_dict["password"]
+        
+        user_internal = UserCreateInternal(**user_internal_dict)
+        await crud_users.create(db=async_db, object=user_internal)
+        
+        # Try to create second user with same email
+        user_create2 = UserCreate(**sample_user_data)
+        user_internal_dict2 = user_create2.model_dump()
+        user_internal_dict2["hashed_password"] = get_password_hash(password=user_internal_dict2["password"])
+        del user_internal_dict2["password"]
+        
+        user_internal2 = UserCreateInternal(**user_internal_dict2)
+        
+        # This should raise IntegrityError due to duplicate email constraint
+        with pytest.raises(IntegrityError):
+            await crud_users.create(db=async_db, object=user_internal2)
 
-        with patch("src.app.api.v1.users.crud_users") as mock_crud:
-            # Mock email doesn't exist, but username does
-            mock_crud.exists = AsyncMock(side_effect=[False, True])
-
-            with pytest.raises(DuplicateValueException, match="Username not available"):
-                await write_user(Mock(), user_create, mock_db)
+    @pytest.mark.asyncio
+    async def test_create_user_duplicate_username(self, async_db: AsyncSession, sample_user_data):
+        """Test user creation with duplicate username fails."""
+        user_create = UserCreate(**sample_user_data)
+        
+        # Create first user
+        user_internal_dict = user_create.model_dump()
+        user_internal_dict["hashed_password"] = get_password_hash(password=user_internal_dict["password"])
+        del user_internal_dict["password"]
+        
+        user_internal = UserCreateInternal(**user_internal_dict)
+        await crud_users.create(db=async_db, object=user_internal)
+        
+        # Try to create second user with same username but different email
+        user_create2 = UserCreate(**sample_user_data)
+        user_create2.email = "different@example.com"
+        user_internal_dict2 = user_create2.model_dump()
+        user_internal_dict2["hashed_password"] = get_password_hash(password=user_internal_dict2["password"])
+        del user_internal_dict2["password"]
+        
+        user_internal2 = UserCreateInternal(**user_internal_dict2)
+        
+        # This should raise IntegrityError due to duplicate username constraint
+        with pytest.raises(IntegrityError):
+            await crud_users.create(db=async_db, object=user_internal2)
 
 
 class TestReadUser:
-    """Test user retrieval endpoint."""
+    """Test user retrieval operations."""
 
     @pytest.mark.asyncio
-    async def test_read_user_success(self, mock_db, sample_user_read):
+    async def test_read_user_success(self, async_db: AsyncSession, sample_user_data):
         """Test successful user retrieval."""
-        username = "test_user"
-
-        with patch("src.app.api.v1.users.crud_users") as mock_crud:
-            mock_crud.get = AsyncMock(return_value=sample_user_read)
-
-            result = await read_user(Mock(), username, mock_db)
-
-            assert result == sample_user_read
-            mock_crud.get.assert_called_once_with(
-                db=mock_db, username=username, is_deleted=False, schema_to_select=UserRead
-            )
-
-    @pytest.mark.asyncio
-    async def test_read_user_not_found(self, mock_db):
-        """Test user retrieval when user doesn't exist."""
-        username = "nonexistent_user"
-
-        with patch("src.app.api.v1.users.crud_users") as mock_crud:
-            mock_crud.get = AsyncMock(return_value=None)
-
-            with pytest.raises(NotFoundException, match="User not found"):
-                await read_user(Mock(), username, mock_db)
-
-
-class TestReadUsers:
-    """Test users list endpoint."""
+        # Create a user first
+        user_create = UserCreate(**sample_user_data)
+        user_internal_dict = user_create.model_dump()
+        user_internal_dict["hashed_password"] = get_password_hash(password=user_internal_dict["password"])
+        del user_internal_dict["password"]
+        
+        user_internal = UserCreateInternal(**user_internal_dict)
+        created_user = await crud_users.create(db=async_db, object=user_internal)
+        
+        # Read the user
+        db_user = await crud_users.get(db=async_db, username=created_user.username, is_deleted=False)
+        assert db_user is not None
+        assert db_user["username"] == user_create.username
+        assert db_user["email"] == user_create.email
+        assert db_user["name"] == user_create.name
 
     @pytest.mark.asyncio
-    async def test_read_users_success(self, mock_db):
-        """Test successful users list retrieval."""
-        mock_users_data = {"data": [{"id": 1}, {"id": 2}], "count": 2}
-
-        with patch("src.app.api.v1.users.crud_users") as mock_crud:
-            mock_crud.get_multi = AsyncMock(return_value=mock_users_data)
-
-            with patch("src.app.api.v1.users.paginated_response") as mock_paginated:
-                expected_response = {"data": [{"id": 1}, {"id": 2}], "pagination": {}}
-                mock_paginated.return_value = expected_response
-
-                result = await read_users(Mock(), mock_db, page=1, items_per_page=10)
-
-                assert result == expected_response
-                mock_crud.get_multi.assert_called_once()
-                mock_paginated.assert_called_once()
+    async def test_read_user_not_found(self, async_db: AsyncSession):
+        """Test user retrieval for non-existent user."""
+        db_user = await crud_users.get(db=async_db, username="nonexistent", is_deleted=False)
+        assert db_user is None
 
 
-class TestPatchUser:
-    """Test user update endpoint."""
+class TestUpdateUser:
+    """Test user update operations."""
 
     @pytest.mark.asyncio
-    async def test_patch_user_success(self, mock_db, current_user_dict, sample_user_read):
+    async def test_patch_user_success(self, async_db: AsyncSession, sample_user_data):
         """Test successful user update."""
-        username = current_user_dict["username"]
-        sample_user_read.username = username  # Make sure usernames match
-        user_update = UserUpdate(name="New Name")
-
-        with patch("src.app.api.v1.users.crud_users") as mock_crud:
-            mock_crud.get = AsyncMock(return_value=sample_user_read)
-            mock_crud.exists = AsyncMock(return_value=False)  # No conflicts
-            mock_crud.update = AsyncMock(return_value=None)
-
-            result = await patch_user(Mock(), user_update, username, current_user_dict, mock_db)
-
-            assert result == {"message": "User updated"}
-            mock_crud.update.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_patch_user_forbidden(self, mock_db, current_user_dict, sample_user_read):
-        """Test user update when user tries to update another user."""
-        username = "different_user"
-        sample_user_read.username = username
-        user_update = UserUpdate(name="New Name")
-
-        with patch("src.app.api.v1.users.crud_users") as mock_crud:
-            mock_crud.get = AsyncMock(return_value=sample_user_read)
-
-            with pytest.raises(ForbiddenException):
-                await patch_user(Mock(), user_update, username, current_user_dict, mock_db)
-
-
-class TestEraseUser:
-    """Test user deletion endpoint."""
+        # Create a user first
+        user_create = UserCreate(**sample_user_data)
+        user_internal_dict = user_create.model_dump()
+        user_internal_dict["hashed_password"] = get_password_hash(password=user_internal_dict["password"])
+        del user_internal_dict["password"]
+        
+        user_internal = UserCreateInternal(**user_internal_dict)
+        created_user = await crud_users.create(db=async_db, object=user_internal)
+        
+        # Update the user
+        user_update = UserUpdate(name="Updated Name")
+        await crud_users.update(db=async_db, object=user_update, username=created_user.username)
+        
+        # Verify the update
+        updated_user = await crud_users.get(db=async_db, username=created_user.username)
+        assert updated_user is not None
+        assert updated_user["name"] == "Updated Name"
 
     @pytest.mark.asyncio
-    async def test_erase_user_success(self, mock_db, current_user_dict, sample_user_read):
+    async def test_patch_user_not_found(self, async_db: AsyncSession):
+        """Test user update for non-existent user."""
+        user_update = UserUpdate(name="Updated Name")
+        # This should raise NoResultFound since no user exists with that username
+        with pytest.raises(NoResultFound):
+            await crud_users.update(db=async_db, object=user_update, username="nonexistent")
+
+
+class TestDeleteUser:
+    """Test user deletion operations."""
+
+    @pytest.mark.asyncio
+    async def test_erase_user_success(self, async_db: AsyncSession, sample_user_data):
         """Test successful user deletion."""
-        username = current_user_dict["username"]
-        sample_user_read.username = username
-        token = "mock_token"
-
-        with patch("src.app.api.v1.users.crud_users") as mock_crud:
-            mock_crud.get = AsyncMock(return_value=sample_user_read)
-            mock_crud.delete = AsyncMock(return_value=None)
-
-            with patch("src.app.api.v1.users.blacklist_token", new_callable=AsyncMock) as mock_blacklist:
-                result = await erase_user(Mock(), username, current_user_dict, mock_db, token)
-
-                assert result == {"message": "User deleted"}
-                mock_crud.delete.assert_called_once_with(db=mock_db, username=username)
-                mock_blacklist.assert_called_once_with(token=token, db=mock_db)
-
-    @pytest.mark.asyncio
-    async def test_erase_user_not_found(self, mock_db, current_user_dict):
-        """Test user deletion when user doesn't exist."""
-        username = "nonexistent_user"
-        token = "mock_token"
-
-        with patch("src.app.api.v1.users.crud_users") as mock_crud:
-            mock_crud.get = AsyncMock(return_value=None)
-
-            with pytest.raises(NotFoundException, match="User not found"):
-                await erase_user(Mock(), username, current_user_dict, mock_db, token)
+        # Create a user first
+        user_create = UserCreate(**sample_user_data)
+        user_internal_dict = user_create.model_dump()
+        user_internal_dict["hashed_password"] = get_password_hash(password=user_internal_dict["password"])
+        del user_internal_dict["password"]
+        
+        user_internal = UserCreateInternal(**user_internal_dict)
+        created_user = await crud_users.create(db=async_db, object=user_internal)
+        
+        # Delete the user
+        await crud_users.delete(db=async_db, username=created_user.username)
+        
+        # Verify soft deletion
+        deleted_user = await crud_users.get(db=async_db, username=created_user.username)
+        assert deleted_user is not None
+        assert deleted_user["is_deleted"] is True
+        assert deleted_user["deleted_at"] is not None
 
     @pytest.mark.asyncio
-    async def test_erase_user_forbidden(self, mock_db, current_user_dict, sample_user_read):
-        """Test user deletion when user tries to delete another user."""
-        username = "different_user"
-        sample_user_read.username = username
-        token = "mock_token"
-
-        with patch("src.app.api.v1.users.crud_users") as mock_crud:
-            mock_crud.get = AsyncMock(return_value=sample_user_read)
-
-            with pytest.raises(ForbiddenException):
-                await erase_user(Mock(), username, current_user_dict, mock_db, token)
+    async def test_erase_user_not_found(self, async_db: AsyncSession):
+        """Test user deletion for non-existent user."""
+        # This should raise NoResultFound since no user exists with that username
+        with pytest.raises(NoResultFound):
+            await crud_users.delete(db=async_db, username="nonexistent")

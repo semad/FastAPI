@@ -3,10 +3,11 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+import pytest_asyncio
 from faker import Faker
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import Session
 
@@ -18,6 +19,15 @@ DATABASE_PREFIX = settings.POSTGRES_SYNC_PREFIX
 
 sync_engine = create_engine(DATABASE_PREFIX + DATABASE_URI)
 local_session = sessionmaker(autocommit=False, autoflush=False, bind=sync_engine)
+
+# Create async engine for integration tests
+async_engine = create_async_engine(
+    f"postgresql+asyncpg://postgres:postgres@localhost:5432/sqlapi",
+    echo=False,
+)
+async_session = async_sessionmaker(
+    async_engine, class_=AsyncSession, expire_on_commit=False
+)
 
 
 fake = Faker()
@@ -36,6 +46,31 @@ def db() -> Generator[Session, Any, None]:
     session = local_session()
     yield session
     session.close()
+
+
+@pytest_asyncio.fixture
+async def async_db() -> AsyncSession:
+    """Async database session for integration tests."""
+    # Create a new engine for each test to avoid connection conflicts
+    test_engine = create_async_engine(
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/sqlapi",
+        echo=False,
+        pool_pre_ping=True,
+        pool_size=1,
+        max_overflow=0,
+    )
+    
+    test_session = async_sessionmaker(
+        test_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    
+    session = test_session()
+    try:
+        yield session
+    finally:
+        await session.rollback()
+        await session.close()
+        await test_engine.dispose()
 
 
 def override_dependency(dependency: Callable[..., Any], mocked_response: Any) -> None:
@@ -100,3 +135,48 @@ def current_user_dict():
         "name": fake.name(),
         "is_superuser": False,
     }
+
+
+def generate_valid_isbn():
+    """Generate a valid ISBN that matches the pattern ^[0-9X-]{10,13}$"""
+    # Generate a 13-digit ISBN without hyphens
+    return fake.numerify(text="#############")
+
+
+@pytest.fixture
+def sample_book_data():
+    """Generate sample book data for tests."""
+    return {
+        "title": fake.catch_phrase(),
+        "author": fake.name(),
+        "description": fake.text(max_nb_chars=500),
+        "isbn": generate_valid_isbn(),
+        "publication_year": fake.year(),
+        "genre": fake.random_element(["Fiction", "Non-Fiction", "Science Fiction", "Mystery", "Romance"]),
+        "pages": fake.random_int(min=50, max=1000),
+        "cover_image_url": fake.image_url(),
+    }
+
+
+@pytest.fixture
+def sample_book_read():
+    """Generate a sample BookRead object."""
+    import uuid
+
+    from src.app.schemas.book import BookRead
+
+    return BookRead(
+        id=1,
+        uuid=uuid.uuid4(),
+        title=fake.catch_phrase(),
+        author=fake.name(),
+        description=fake.text(max_nb_chars=500),
+        isbn=generate_valid_isbn(),
+        publication_year=fake.year(),
+        genre=fake.random_element(["Fiction", "Non-Fiction", "Science Fiction", "Mystery", "Romance"]),
+        pages=fake.random_int(min=50, max=1000),
+        cover_image_url=fake.image_url(),
+        created_by_user_id=1,
+        created_at=fake.date_time(),
+        updated_at=fake.date_time(),
+    )
