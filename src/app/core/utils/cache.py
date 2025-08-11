@@ -333,3 +333,11 @@ def cache(
         return inner
 
     return wrapper
+
+def no_cache(func: Callable) -> Callable:
+    """No-op cache decorator that simply calls the function without caching.
+    
+    Use this when you want to explicitly disable caching for a specific endpoint
+    without removing the @cache decorator entirely.
+    """
+    return func

@@ -48,6 +48,7 @@ class PDFImporter:
         self.password = password
         self.session: Optional[aiohttp.ClientSession] = None
         self.access_token: Optional[str] = None
+        self.books_cache: List[dict] = []
         self.stats = {
             'total_files': 0,
             'pdf_files': 0,
@@ -177,8 +178,8 @@ class PDFImporter:
             'author': author
         }
     
-    async def check_book_exists(self, content_hash: str) -> bool:
-        """Check if a book with the same content hash already exists."""
+    async def get_books_in_db(self) -> bool:
+        """Get all books in the database."""
         if not self.session:
             return False
         
@@ -187,29 +188,94 @@ class PDFImporter:
             url = f"{self.base_url}/api/v1/books"
             params = {'items_per_page': 100}  # Get more books to search through
             
-            async with self.session.get(url, params=params) as response:
-                print(f"response: {response.status}")
-                if response.status == 200:
-                    data = await response.json()
-                    books = data.get('data', [])
-                    print(f"books: {books}")
-                    
-                    # Check if any book has the same content hash
-                    print(f"content_hash: {content_hash}")
-                    for book in books:
-                        print(f"\t{book.get('content_hash')} {book.get('title')}")
-
-                        if book.get('content_hash') == content_hash:
-                            print(f"Book already exists with content hash: {content_hash}")
-                            return True
-                    
-                    return False
-                else:
+            async with self.session.post(url, params=params) as response:
+                #print(f"response: {response}")
+                # if data is paginated, we need to get all the pages
+                if response.status != 200:
                     print(f"Warning: Could not check for existing books (status: {response.status})")
                     return False
+
+                if response.headers.get('Content-Type') != 'application/json':
+                    print(f"Warning: Could not check for existing books (headers : {response.headers})")
+                    return False
+                
+                data = await response.json()
+                #print(f"\ndata: {data}\n")
+                self.books_cache = data.get('data', [])
+                #print(f"books: {books}")
+                # get the next page
+                print(f"data: {data.get('next')}")
+                while data.get('has_more'):
+                    params = {'items_per_page': 100, 'page': str(int(data.get('page')) + 1)}  # Get more books to search through
+                    async with self.session.post(url, params=params) as response:
+                        data = await response.json()
+                        #print(f"data: {data}")
+                        self.books_cache.extend(data.get('data', []))
+
+                return True
+
+
         except Exception as e:
-            print(f"Error checking for existing book: {e}")
+            print(f"Error getting books in database: {e}")
             return False
+    
+    async def check_book_exists(self, content_hash: str) -> bool:
+        """Check if a book with the same content hash already exists."""
+        if not self.books_cache:
+            if not (await self.get_books_in_db()):
+                print(f"Error getting books in database")
+                return False
+
+        print(f"books_cache length: {len(self.books_cache)} ")
+        for book in self.books_cache:
+            if book.get('content_hash') == content_hash:
+                return True 
+        return False
+
+    # async def check_book_exists(self, content_hash: str) -> bool:
+    #     """Check if a book with the same content hash already exists."""
+    #     if not self.session:
+    #         return False
+        
+    #     try:
+    #         # Use the public books endpoint to search
+    #         url = f"{self.base_url}/api/v1/books"
+    #         params = {'items_per_page': 100}  # Get more books to search through
+            
+    #         async with self.session.post(url, params=params) as response:
+    #             #print(f"response: {response}")
+    #             # if data is paginated, we need to get all the pages
+    #             if response.status != 200:
+    #                 print(f"Warning: Could not check for existing books (status: {response.status})")
+    #                 return False
+
+    #             if response.headers.get('Content-Type') != 'application/json':
+    #                 print(f"Warning: Could not check for existing books (headers : {response.headers})")
+    #                 return False
+                
+    #             data = await response.json()
+    #             #print(f"\ndata: {data}\n")
+    #             books = data.get('data', [])
+    #             #print(f"books: {books}")
+    #             # get the next page
+    #             print(f"data: {data.get('next')}")
+    #             while data.get('has_more'):
+    #                 params = {'items_per_page': 100, 'page': str(int(data.get('page')) + 1)}  # Get more books to search through
+    #                 async with self.session.post(url, params=params) as response:
+    #                     data = await response.json()
+    #                     #print(f"data: {data}")
+    #                     books.extend(data.get('data', []))
+
+
+    #             print(f"books_length: {len(books)}")
+    #             # Check if any book has the same content hash
+    #             for book in books:
+    #                 if book.get('content_hash') == content_hash:
+    #                     return True
+
+    #     except Exception as e:
+    #         print(f"Error checking for existing book: {e}")
+    #         return False
     
     async def create_book(self, file_info: Dict, metadata: Dict) -> bool:
         """Create a book in the database via API."""
@@ -245,6 +311,7 @@ class PDFImporter:
                     book = await response.json()
                     print(f"✅ Created book: {book['title']} by {book['author']} (ID: {book['id']})")
                     self.stats['created_books'] += 1
+                    self.books_cache.append(book)
                     return True
                 else:
                     error_text = await response.text()
@@ -265,7 +332,7 @@ class PDFImporter:
             return
         
         self.stats['pdf_files'] += 1
-        print(f"📖 Processing PDF: {file_path.name}")
+        print(f"📖 Processing PDF: {self.stats['pdf_files']}  - {file_path.name}")
         
         # Get file information
         file_info = self.get_file_info(file_path)

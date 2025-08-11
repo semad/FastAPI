@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...api.dependencies import get_current_superuser, get_current_user
 from ...core.db.database import async_get_db
 from ...core.exceptions.http_exceptions import ForbiddenException, NotFoundException, DuplicateValueException
-from ...core.utils.cache import cache
+from ...core.utils.cache import cache, no_cache
 from ...crud.crud_books import crud_books
 from ...crud.crud_users import crud_users
 from ...schemas.book import BookCreate, BookCreateInternal, BookRead, BookUpdate
@@ -51,11 +51,13 @@ async def write_book(
     return cast(BookRead, book_read)
 
 
+@router.post("/{username}/books", response_model=PaginatedListResponse[BookRead])
 @router.get("/{username}/books", response_model=PaginatedListResponse[BookRead])
 @cache(
     key_prefix="{username}_books:page_{page}:items_per_page:{items_per_page}",
     resource_id_name="username",
-    expiration=60,
+    expiration=0,
+
 )
 async def read_books(
     request: Request,
@@ -177,6 +179,7 @@ async def erase_db_book(
 
 # Public endpoints for browsing books
 @router.get("/books", response_model=PaginatedListResponse[BookRead])
+@router.post("/books", response_model=PaginatedListResponse[BookRead])
 @cache(
     key_prefix="public_books:page_{page}:items_per_page:{items_per_page}",
     resource_id_name="page",
