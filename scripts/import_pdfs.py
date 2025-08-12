@@ -30,6 +30,15 @@ import time
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+# TODO import variable from .env file
+from dotenv import load_dotenv
+load_dotenv(str(Path(__file__).parent.parent / "src" / ".env"))
+env_base_url = os.getenv('API_BASE_URL')
+env_username = os.getenv('API_ADMIN_USERNAME')
+env_password = os.getenv('API_ADMIN_PASSWORD')
+
+print(f"env_base_url: {env_base_url}, env_username: {env_username}, env_password: {env_password}")
+
 try:
     from app.schemas.book import BookCreate
     from app.core.config import settings
@@ -42,10 +51,10 @@ except ImportError as e:
 class PDFImporter:
     """Handles PDF file discovery and book creation via API."""
     
-    def __init__(self, base_url: str = "http://localhost:8000/", username: str = "admin", password: str = "admin123"):
-        self.base_url = base_url.rstrip('/')
-        self.username = username
-        self.password = password
+    def __init__(self, b_url, user_name, p_word):
+        self.base_url = b_url.rstrip('/')
+        self.username = user_name
+        self.password = p_word
         self.session: Optional[aiohttp.ClientSession] = None
         self.access_token: Optional[str] = None
         self.books_cache: List[dict] = []
@@ -404,17 +413,24 @@ Examples:
     )
     
     parser.add_argument(
-        '--api-url',
-        type=str,
-        default='http://localhost:8000/',
-        help='FastAPI server URL (default: http://localhost:8000/)'
+         '--api-url',
+         type=str,
+         default=env_base_url,
+         help='FastAPI server URL (default: ' +  env_base_url + ')'
     )
     
     parser.add_argument(
-        '--username',
-        type=str,
-        default='admin',
-        help='Username for book creation (default: admin)'
+         '--username',
+         type=str,
+         default=env_username,
+         help='Username for book creation (default: ' + env_username + ')'
+    )
+
+    parser.add_argument(
+         '--password',
+         type=str,
+         default=env_password,
+         help='Password for book creation (default: ' + env_password + ')'
     )
     
     parser.add_argument(
@@ -424,7 +440,7 @@ Examples:
     )
     
     args = parser.parse_args()
-    
+
     # Validate directory
     directory = Path(args.directory)
     print(f"directory: {directory}, args.api_url: {args.api_url}, args.username: {args.username}")
@@ -441,6 +457,7 @@ Examples:
     print(f"📁 Directory: {directory.absolute()}")
     print(f"🌐 API URL: {args.api_url}")
     print(f"👤 Username: {args.username}")
+    print(f"🔒 Password: {args.password}")
     print(f"🔍 Mode: {'Dry Run' if args.dry_run else 'Live Import'}")
     print("-" * 50)
     
@@ -449,7 +466,7 @@ Examples:
         print("-" * 50)
     
     # Create importer
-    async with PDFImporter(args.api_url, args.username) as importer:
+    async with PDFImporter(args.api_url, args.username, args.password) as importer:
         try:
             # Scan directory
             await importer.scan_directory(directory)
