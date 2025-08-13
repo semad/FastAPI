@@ -54,15 +54,42 @@ cleanup_volumes() {
 cleanup_networks() {
     echo "🌐 Cleaning up networks..."
     
-    # Remove custom networks (skip default ones)
-    CUSTOM_NETWORKS=$(docker network ls --filter "type=custom" -q 2>/dev/null || true)
+    # Get all networks except the default ones that Docker needs
+    # Default networks: bridge, host, none
+    ALL_NETWORKS=$(docker network ls -q 2>/dev/null || true)
+    DEFAULT_NETWORKS="bridge host none"
     
-    if [ -n "$CUSTOM_NETWORKS" ]; then
-        echo "   Removing custom networks..."
-        echo "$CUSTOM_NETWORKS" | xargs -r docker network rm
-        echo "   ✅ Custom networks removed"
+    if [ -n "$ALL_NETWORKS" ]; then
+        if [ "$1" = "--remove-all-networks" ]; then
+            echo "   Removing ALL networks (including default Docker networks)..."
+            
+            # Remove each network individually to handle errors gracefully
+            for network_id in $ALL_NETWORKS; do
+                network_name=$(docker network inspect --format='{{.Name}}' "$network_id" 2>/dev/null || echo "")
+                echo "     Removing network: $network_name ($network_id)"
+                docker network rm "$network_id" 2>/dev/null || echo "       ⚠️  Failed to remove network: $network_name"
+            done
+        else
+            echo "   Removing all networks (except default Docker networks)..."
+            
+            # Remove each network individually to handle errors gracefully
+            for network_id in $ALL_NETWORKS; do
+                network_name=$(docker network inspect --format='{{.Name}}' "$network_id" 2>/dev/null || echo "")
+                
+                # Skip default networks
+                if [[ " $DEFAULT_NETWORKS " =~ " $network_name " ]]; then
+                    echo "     Skipping default network: $network_name"
+                    continue
+                fi
+                
+                echo "     Removing network: $network_name ($network_id)"
+                docker network rm "$network_id" 2>/dev/null || echo "       ⚠️  Failed to remove network: $network_name"
+            done
+        fi
+        
+        echo "   ✅ Networks cleanup completed"
     else
-        echo "   ℹ️  No custom networks to remove"
+        echo "   ℹ️  No networks to remove"
     fi
 }
 
@@ -137,7 +164,7 @@ main() {
     cleanup_volumes
     
     # Cleanup networks
-    cleanup_networks
+    cleanup_networks "$1"
     
     # Optional: cleanup images
     if [ "$1" = "--remove-images" ]; then
@@ -154,14 +181,15 @@ case "${1:-}" in
         echo "Usage: $0 [OPTIONS]"
         echo ""
         echo "Options:"
-        echo "  --remove-images    Also remove unused Docker images"
-        echo "  --help, -h         Show this help message"
+        echo "  --remove-images        Also remove unused Docker images"
+        echo "  --remove-all-networks  Remove ALL networks (including default Docker networks)"
+        echo "  --help, -h             Show this help message"
         echo ""
         echo "This script will:"
         echo "  - Stop all running containers"
         echo "  - Remove all containers"
         echo "  - Remove all volumes"
-        echo "  - Remove custom networks"
+        echo "  - Remove all networks (except default Docker networks)"
         echo "  - Clean up project-specific resources"
         echo ""
         exit 0
@@ -170,5 +198,6 @@ case "${1:-}" in
         main "$@"
         ;;
 esac
+
 
 

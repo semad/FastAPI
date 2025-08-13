@@ -15,9 +15,8 @@ echo "🧹 Cleaning up containers and networks..."
 docker-compose down --remove-orphans
 
 # Optionally remove volumes (uncomment if you want to reset data)
-# echo "🗑️  Removing volumes..."
-# docker-compose down -v
+echo "🗑️  Removing volumes..."
+docker-compose down -v
 
 echo ""
 echo "✅ Teardown completed!"
-echo "💡 To start again, run: ./scripts/enhanced_startup.sh"

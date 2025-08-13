@@ -133,3 +133,11 @@ cython_debug/
 .ruff_cache
 
 .idea
+
+# Test results and reports
+test_results/
+test_results/*
+
+# VS Code configuration
+.vscode/
+.vscode/*

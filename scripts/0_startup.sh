@@ -16,15 +16,15 @@ sleep 30
 
 # Run health check
 echo "🏥 Running health check..."
-./scripts/enhanced_health_check.sh
+./scripts/1_inital_health_checkup.sh
 
 # Run database setup if needed
-echo "📊 Setting up database..."
-./scripts/auto_migrate.sh
+#echo "📊 Setting up database..."
+#./scripts/auto_migrate.sh
 
 # Create superuser if needed
-echo "👤 Creating superuser..."
-docker exec fastapi-web-1 python -m src.scripts.create_first_superuser
+#echo "👤 Creating superuser..."
+#docker exec fastapi-web-1 python -m src.scripts.create_first_superuser
 
 echo ""
 echo "✅ Startup completed!"

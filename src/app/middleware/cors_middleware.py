@@ -80,3 +80,5 @@ def add_cors_middleware(app: FastAPI, cors_settings: CORSSettings) -> None:
     """
     cors_middleware = CORSConfigMiddleware(app, cors_settings)
     cors_middleware.configure_cors(app)
+
+
