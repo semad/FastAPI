@@ -117,6 +117,47 @@ class CRUDAdminSettings(BaseSettings):
     CRUD_ADMIN_REDIS_SSL: bool = config("CRUD_ADMIN_REDIS_SSL", default=False)
 
 
+class CORSSettings(BaseSettings):
+    """CORS (Cross-Origin Resource Sharing) configuration settings."""
+    CORS_ENABLED: bool = config("CORS_ENABLED", default=True)
+    
+    @property
+    def CORS_ALLOW_ORIGINS(self) -> list[str]:
+        """Get CORS allowed origins from environment variable or use default."""
+        origins_str = config("CORS_ALLOW_ORIGINS", default="http://localhost:1234,http://localhost:3000,http://localhost:8000")
+        if isinstance(origins_str, str):
+            return [origin.strip() for origin in origins_str.split(",")]
+        return origins_str
+    
+    CORS_ALLOW_CREDENTIALS: bool = config("CORS_ALLOW_CREDENTIALS", default=True)
+    
+    @property
+    def CORS_ALLOW_METHODS(self) -> list[str]:
+        """Get CORS allowed methods from environment variable or use default."""
+        methods_str = config("CORS_ALLOW_METHODS", default="GET,POST,PUT,DELETE,OPTIONS,PATCH")
+        if isinstance(methods_str, str):
+            return [method.strip() for method in methods_str.split(",")]
+        return methods_str
+    
+    @property
+    def CORS_ALLOW_HEADERS(self) -> list[str]:
+        """Get CORS allowed headers from environment variable or use default."""
+        headers_str = config("CORS_ALLOW_HEADERS", default="*")
+        if isinstance(headers_str, str) and headers_str != "*":
+            return [header.strip() for header in headers_str.split(",")]
+        return ["*"]
+    
+    @property
+    def CORS_EXPOSE_HEADERS(self) -> list[str]:
+        """Get CORS expose headers from environment variable or use default."""
+        headers_str = config("CORS_EXPOSE_HEADERS", default="*")
+        if isinstance(headers_str, str) and headers_str != "*":
+            return [header.strip() for header in headers_str.split(",")]
+        return ["*"]
+    
+    CORS_MAX_AGE: int = config("CORS_MAX_AGE", default=600)
+
+
 class EnvironmentOption(Enum):
     LOCAL = "local"
     STAGING = "staging"
@@ -140,6 +181,7 @@ class Settings(
     DefaultRateLimitSettings,
     CRUDAdminSettings,
     EnvironmentSettings,
+    CORSSettings,
 ):
     pass
 
