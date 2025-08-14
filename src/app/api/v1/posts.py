@@ -28,12 +28,20 @@ async def write_post(
     if db_user is None:
         raise NotFoundException("User not found")
 
-    db_user = cast(UserRead, db_user)
-    if current_user["id"] != db_user.id:
+    # Handle case where crud_users.get returns a dict instead of UserRead model
+    if isinstance(db_user, dict):
+        user_id = db_user.get("id")
+        if user_id is None:
+            raise NotFoundException("User ID not found")
+    else:
+        db_user = cast(UserRead, db_user)
+        user_id = db_user.id
+
+    if current_user["id"] != user_id:
         raise ForbiddenException()
 
     post_internal_dict = post.model_dump()
-    post_internal_dict["created_by_user_id"] = db_user.id
+    post_internal_dict["created_by_user_id"] = user_id
 
     post_internal = PostCreateInternal(**post_internal_dict)
     created_post = await crud_posts.create(db=db, object=post_internal)
@@ -45,7 +53,7 @@ async def write_post(
     return cast(PostRead, post_read)
 
 
-@router.get("/{username}/posts", response_model=PaginatedListResponse[PostRead])
+@router.post("/{username}/posts", response_model=PaginatedListResponse[PostRead])
 @cache(
     key_prefix="{username}_posts:page_{page}:items_per_page:{items_per_page}",
     resource_id_name="username",
@@ -62,12 +70,20 @@ async def read_posts(
     if not db_user:
         raise NotFoundException("User not found")
 
-    db_user = cast(UserRead, db_user)
+    # Handle case where crud_users.get returns a dict instead of UserRead model
+    if isinstance(db_user, dict):
+        user_id = db_user.get("id")
+        if user_id is None:
+            raise NotFoundException("User ID not found")
+    else:
+        db_user = cast(UserRead, db_user)
+        user_id = db_user.id
+
     posts_data = await crud_posts.get_multi(
         db=db,
         offset=compute_offset(page, items_per_page),
         limit=items_per_page,
-        created_by_user_id=db_user.id,
+        created_by_user_id=user_id,
         is_deleted=False,
     )
 
@@ -84,9 +100,17 @@ async def read_post(
     if db_user is None:
         raise NotFoundException("User not found")
 
-    db_user = cast(UserRead, db_user)
+    # Handle case where crud_users.get returns a dict instead of UserRead model
+    if isinstance(db_user, dict):
+        user_id = db_user.get("id")
+        if user_id is None:
+            raise NotFoundException("User ID not found")
+    else:
+        db_user = cast(UserRead, db_user)
+        user_id = db_user.id
+
     db_post = await crud_posts.get(
-        db=db, id=id, created_by_user_id=db_user.id, is_deleted=False, schema_to_select=PostRead
+        db=db, id=id, created_by_user_id=user_id, is_deleted=False, schema_to_select=PostRead
     )
     if db_post is None:
         raise NotFoundException("Post not found")
@@ -108,8 +132,16 @@ async def patch_post(
     if db_user is None:
         raise NotFoundException("User not found")
 
-    db_user = cast(UserRead, db_user)
-    if current_user["id"] != db_user.id:
+    # Handle case where crud_users.get returns a dict instead of UserRead model
+    if isinstance(db_user, dict):
+        user_id = db_user.get("id")
+        if user_id is None:
+            raise NotFoundException("User ID not found")
+    else:
+        db_user = cast(UserRead, db_user)
+        user_id = db_user.id
+
+    if current_user["id"] != user_id:
         raise ForbiddenException()
 
     db_post = await crud_posts.get(db=db, id=id, is_deleted=False, schema_to_select=PostRead)
@@ -133,8 +165,16 @@ async def erase_post(
     if db_user is None:
         raise NotFoundException("User not found")
 
-    db_user = cast(UserRead, db_user)
-    if current_user["id"] != db_user.id:
+    # Handle case where crud_users.get returns a dict instead of UserRead model
+    if isinstance(db_user, dict):
+        user_id = db_user.get("id")
+        if user_id is None:
+            raise NotFoundException("User ID not found")
+    else:
+        db_user = cast(UserRead, db_user)
+        user_id = db_user.id
+
+    if current_user["id"] != user_id:
         raise ForbiddenException()
 
     db_post = await crud_posts.get(db=db, id=id, is_deleted=False, schema_to_select=PostRead)

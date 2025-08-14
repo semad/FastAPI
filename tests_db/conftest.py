@@ -6,7 +6,7 @@ import pytest
 import pytest_asyncio
 from faker import Faker
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import Session
@@ -65,10 +65,11 @@ async def async_db() -> AsyncSession:
     )
     
     session = test_session()
+    
     try:
         yield session
     finally:
-        await session.rollback()
+        # Close the session and dispose the engine
         await session.close()
         await test_engine.dispose()
 

@@ -4,6 +4,9 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import NoResultFound
+from faker import Faker
+
+fake = Faker()
 
 from src.app.core.exceptions.http_exceptions import DuplicateValueException, ForbiddenException, NotFoundException
 from src.app.crud.crud_books import crud_books
@@ -146,7 +149,9 @@ class TestReadBooks:
         for i in range(3):
             book_data = sample_book_data.copy()
             book_data["title"] = f"Book {i+1}"
-            book_data["isbn"] = f"978000000000{i}"
+            # Use the generate_valid_isbn function to avoid conflicts
+            from tests_db.conftest import generate_valid_isbn
+            book_data["isbn"] = generate_valid_isbn()
             book_data["created_by_user_id"] = created_user.id
             book_create = BookCreateInternal(**book_data)
             await crud_books.create(db=async_db, object=book_create)
@@ -182,12 +187,14 @@ class TestPatchBook:
         
         # Update the book
         book_update = BookUpdate(title="Updated Title")
-        updated_book = await crud_books.update(
+        await crud_books.update(
             db=async_db, 
             object=book_update, 
             id=created_book.id
         )
         
+        # Verify the update by retrieving the updated book
+        updated_book = await crud_books.get(db=async_db, id=created_book.id)
         assert updated_book is not None
         assert updated_book["title"] == "Updated Title"
 
@@ -215,8 +222,8 @@ class TestPatchBook:
         
         user2_create = UserCreateInternal(
             name="User 2",
-            username="user2",
-            email="user2@example.com",
+            username=f"user2{fake.unique.random_number(digits=6)}",
+            email=f"user2_{fake.unique.random_number(digits=6)}@example.com",
             hashed_password=get_password_hash("testpassword"),
             is_superuser=False
         )
@@ -224,7 +231,7 @@ class TestPatchBook:
         
         # Create a book owned by user1
         book_data = sample_book_data.copy()
-        book_data["created_by_user_id"] = user1["id"]
+        book_data["created_by_user_id"] = user1.id
         book_create = BookCreateInternal(**book_data)
         created_book = await crud_books.create(db=async_db, object=book_create)
         
@@ -233,12 +240,14 @@ class TestPatchBook:
         
         # This should work since CRUD doesn't enforce ownership - it's handled at API level
         # But we can verify the book was updated
-        updated_book = await crud_books.update(
+        await crud_books.update(
             db=async_db, 
             object=book_update, 
-            id=created_book["id"]
+            id=created_book.id
         )
         
+        # Verify the update by retrieving the updated book
+        updated_book = await crud_books.get(db=async_db, id=created_book.id)
         assert updated_book is not None
         assert updated_book["title"] == "Updated Title"
 
@@ -257,7 +266,7 @@ class TestPatchBook:
         
         # Create first book
         book_data1 = sample_book_data.copy()
-        book_data1["isbn"] = "9780000000001"
+        book_data1["isbn"] = f"978{fake.unique.random_number(digits=9)}"
         book_data1["created_by_user_id"] = created_user.id
         book_create1 = BookCreateInternal(**book_data1)
         await crud_books.create(db=async_db, object=book_create1)
@@ -265,13 +274,13 @@ class TestPatchBook:
         # Create second book with different ISBN
         book_data2 = sample_book_data.copy()
         book_data2["title"] = "Book 2"
-        book_data2["isbn"] = "9780000000002"
+        book_data2["isbn"] = f"978{fake.unique.random_number(digits=9)}"
         book_data2["created_by_user_id"] = created_user.id
         book_create2 = BookCreateInternal(**book_data2)
         created_book2 = await crud_books.create(db=async_db, object=book_create2)
         
         # Try to update second book to use first book's ISBN
-        book_update = BookUpdate(isbn="9780000000001")
+        book_update = BookUpdate(isbn=book_data1["isbn"])
         
         # This should raise IntegrityError due to duplicate ISBN constraint
         with pytest.raises(IntegrityError):
@@ -309,7 +318,9 @@ class TestEraseBook:
         
         # Verify the book is soft deleted
         retrieved_book = await crud_books.get(db=async_db, id=created_book.id)
-        assert retrieved_book is None  # Soft deleted books are not returned by default
+        assert retrieved_book is not None
+        assert retrieved_book["is_deleted"] is True
+        assert retrieved_book["deleted_at"] is not None
 
     @pytest.mark.asyncio
     async def test_erase_book_not_found(self, async_db: AsyncSession):
@@ -333,8 +344,8 @@ class TestEraseBook:
         
         user2_create = UserCreateInternal(
             name="User 2",
-            username="user2",
-            email="user2@example.com",
+            username=f"user2{fake.unique.random_number(digits=6)}",
+            email=f"user2_{fake.unique.random_number(digits=6)}@example.com",
             hashed_password=get_password_hash("testpassword"),
             is_superuser=False
         )
@@ -350,6 +361,8 @@ class TestEraseBook:
         # This should work since CRUD doesn't enforce ownership - it's handled at API level
         await crud_books.delete(db=async_db, id=created_book.id)
         
-        # Verify the book is deleted
+        # Verify the book is soft deleted
         retrieved_book = await crud_books.get(db=async_db, id=created_book.id)
-        assert retrieved_book is None
+        assert retrieved_book is not None
+        assert retrieved_book["is_deleted"] is True
+        assert retrieved_book["deleted_at"] is not None
